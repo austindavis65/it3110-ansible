@@ -1,0 +1,156 @@
+---
+- name: Secure User and Group Management Setup for Financial Institution
+  hosts: all
+  become: yes
+  vars:
+    groups_list:
+      - executives
+      - analysts
+      - administrators
+    users:
+      - username: ceo
+        primary_group: executives
+        secondary_groups: []
+        full_name: "Chief Executive Officer"
+      - username: cfo
+        primary_group: executives
+        secondary_groups: []
+        full_name: "Chief Financial Officer"
+      - username: cio
+        primary_group: executives
+        secondary_groups: []
+        full_name: "Chief Information Officer"
+      - username: analyst01
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 1"
+      - username: analyst02
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 2"
+      - username: analyst03
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 3"
+      - username: analyst04
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 4"
+      - username: analyst05
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 5"
+      - username: sysadmin01
+        primary_group: administrators
+        secondary_groups:
+          - sudo
+        full_name: "System Administrator 1"
+      - username: sysadmin02
+        primary_group: administrators
+        secondary_groups:
+          - sudo
+        full_name: "System Administrator 2"
+
+  tasks:
+    - name: Ensure secrets directory exists with correct permissions on control node
+      file:
+        path: secrets
+        state: directory
+        mode: '0700'
+        owner: "{{ lookup('env', 'USER') }}"   # Uses your current local username (austin)
+      delegate_to: localhost
+      run_once: true
+
+    - name: Install packages for password policy enforcement (libpam-pwquality)
+      apt:
+        name: libpam-pwquality
+        state: present
+        update_cache: yes
+
+    - name: Create the three required user groups
+      group:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ groups_list }}"
+
+    - name: Generate unique, randomly generated passwords for each user (stored securely on control node)
+      set_fact:
+        user_passwords: "{{ user_passwords | default({}) | combine({item.username: lookup('password', 'secrets/' + item.username + ' length=16 chars=ascii_letters,ascii_digits,punctuation') | trim }) }}"
+      loop: "{{ users }}"
+      run_once: true
+
+    - name: Create user accounts with strong random passwords
+      user:
+        name: "{{ item.username }}"
+        group: "{{ item.primary_group }}"
+        groups: "{{ item.secondary_groups | join(',') if item.secondary_groups else omit }}"
+        password: "{{ user_passwords[item.username] | password_hash('sha512') }}"
+        comment: "{{ item.full_name }}"
+        shell: /bin/bash
+        create_home: true
+        state: present
+      loop: "{{ users }}"
+
+    - name: Create base work directory (/financial/work)
+      file:
+        path: /financial/work
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create group-specific work directories with strict permissions (setgid + sticky bit)
+      file:
+        path: "/financial/work/{{ item }}"
+        state: directory
+        owner: root
+        group: "{{ item }}"
+        mode: '3770'
+      loop: "{{ groups_list }}"
+
+    - name: Enforce strong password policy (minimum 12 characters with complexity)
+      blockinfile:
+        path: /etc/security/pwquality.conf
+        block: |
+          # Financial institution strong password policy - ANSIBLE MANAGED
+          minlen = 12
+          ucredit = -1
+          lcredit = -1
+          dcredit = -1
+          ocredit = -1
+          difok = 4
+          maxrepeat = 3
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED PASSWORD POLICY"
+
+    - name: Ensure pam_pwquality is enforced in PAM stack
+      lineinfile:
+        path: /etc/pam.d/common-password
+        regexp: '^password\s+requisite\s+pam_pwquality\.so'
+        line: 'password        requisite                       pam_pwquality.so retry=3'
+        insertbefore: '^password\s+\[success=1 default=ignore\]'
+        state: present
+
+    - name: Configure SSH for key-based authentication (disable password login for administrators)
+      blockinfile:
+        path: /etc/ssh/sshd_config
+        block: |
+          # SSH key-based authentication enforcement for administrators - ANSIBLE MANAGED
+          PubkeyAuthentication yes
+          Match User sysadmin01,sysadmin02
+              PasswordAuthentication no
+        marker: "# {mark} ANSIBLE MANAGED SSH CONFIG"
+
+    - name: Ensure .ssh directories exist for administrators with correct permissions
+      file:
+        path: "/home/{{ item.username }}/.ssh"
+        state: directory
+        owner: "{{ item.username }}"
+        group: "{{ item.primary_group }}"
+        mode: '0700'
+      loop: "{{ users | selectattr('secondary_groups', 'contains', 'sudo') | list }}"
+
+    - name: Restart SSH service to apply configuration
+      service:
+        name: ssh
+        state: restarted

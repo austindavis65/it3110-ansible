@@ -1,0 +1,111 @@
+---
+- name: Tear Down Secure User and Group Management for Financial Institution
+  hosts: all
+  become: yes
+  vars:
+    groups_list:
+      - executives
+      - analysts
+      - administrators
+    users:
+      - username: ceo
+        primary_group: executives
+        secondary_groups: []
+        full_name: "Chief Executive Officer"
+      - username: cfo
+        primary_group: executives
+        secondary_groups: []
+        full_name: "Chief Financial Officer"
+      - username: cio
+        primary_group: executives
+        secondary_groups: []
+        full_name: "Chief Information Officer"
+      - username: analyst01
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 1"
+      - username: analyst02
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 2"
+      - username: analyst03
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 3"
+      - username: analyst04
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 4"
+      - username: analyst05
+        primary_group: analysts
+        secondary_groups: []
+        full_name: "Financial Analyst 5"
+      - username: sysadmin01
+        primary_group: administrators
+        secondary_groups:
+          - sudo
+        full_name: "System Administrator 1"
+      - username: sysadmin02
+        primary_group: administrators
+        secondary_groups:
+          - sudo
+        full_name: "System Administrator 2"
+
+  tasks:
+    - name: Remove all created user accounts (including home directories and mail spool)
+      user:
+        name: "{{ item.username }}"
+        state: absent
+        remove: yes
+        force: yes
+      loop: "{{ users }}"
+      ignore_errors: yes   # Continue even if a user is in use
+
+    - name: Remove group-specific work directories
+      file:
+        path: "/financial/work/{{ item }}"
+        state: absent
+        force: yes
+      loop: "{{ groups_list }}"
+
+    - name: Remove base work directory (if empty)
+      file:
+        path: /financial/work
+        state: absent
+
+    - name: Remove the three custom user groups
+      group:
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ groups_list }}"
+      ignore_errors: yes   # Groups may still have members or be in use
+
+    - name: Remove strong password policy configuration
+      blockinfile:
+        path: /etc/security/pwquality.conf
+        marker: "# {mark} ANSIBLE MANAGED PASSWORD POLICY"
+        state: absent
+
+    - name: Remove pwquality enforcement from PAM stack
+      lineinfile:
+        path: /etc/pam.d/common-password
+        regexp: '^password\s+requisite\s+pam_pwquality\.so'
+        state: absent
+
+    - name: Revert SSH configuration changes
+      blockinfile:
+        path: /etc/ssh/sshd_config
+        marker: "# {mark} ANSIBLE MANAGED SSH CONFIG"
+        state: absent
+
+    - name: Restart SSH service to apply reverted configuration
+      service:
+        name: ssh
+        state: restarted
+
+    - name: Remove secrets directory containing generated passwords (on control node only)
+      file:
+        path: secrets
+        state: absent
+      delegate_to: localhost
+      run_once: true
