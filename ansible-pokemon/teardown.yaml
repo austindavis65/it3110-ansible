@@ -1,74 +1,50 @@
 ---
-- name: Teardown Pokemon Application
+- name: Safe Teardown - Pokemon Application (Files + Services Only)
   hosts: all
   become: yes
   gather_facts: yes
 
   tasks:
 
-    - name: Remove Pokemon web application files
+    - name: Remove Pokemon web application directory
       file:
         path: /var/www/html/water
         state: absent
-      when: inventory_hostname in groups['web']
+      when: "'web' in group_names"
+      tags: web
 
-    - name: Remove Apache2 and PHP packages
-      apt:
-        name:
-          - apache2
-          - php
-          - php-mysql
-          - libapache2-mod-php
-        state: absent
-        purge: yes
-        autoremove: yes
-      when: inventory_hostname in groups['web']
-
-    - name: Stop and disable Apache2
+    - name: Stop and disable Apache2 service
       service:
         name: apache2
         state: stopped
         enabled: no
-      when: inventory_hostname in groups['web']
+      when: "'web' in group_names"
       ignore_errors: yes
+      tags: web
 
-    - name: Remove MySQL server and related packages
-      apt:
-        name:
-          - mysql-server
-          - python3-pymysql
-          - python3-mysqldb
-        state: absent
-        purge: yes
-        autoremove: yes
-      when: inventory_hostname in groups['db']
-
-    - name: Stop and disable MySQL
+    - name: Stop and disable MySQL service
       service:
         name: mysql
         state: stopped
         enabled: no
-      when: inventory_hostname in groups['db']
+      when: "'db' in group_names"
       ignore_errors: yes
+      tags: db
 
-    - name: Remove MySQL data directory (completely reset database)
-      file:
-        path: /var/lib/mysql
-        state: absent
-      when: inventory_hostname in groups['db']
-      ignore_errors: yes
-
-    - name: Remove custom MySQL config
+    - name: Remove custom MySQL configuration (optional)
       file:
         path: /etc/mysql/mysql.conf.d/mysqld.cnf
         state: absent
-      when: inventory_hostname in groups['db']
+      when: "'db' in group_names"
       ignore_errors: yes
+      tags: db
 
-    - name: Final message
+    - name: Teardown complete message
       debug:
         msg: |
-          ✅ Teardown completed!
-          - Web files and Apache removed from {{ groups['web'] | join(', ') }}
-          - MySQL server and database completely removed from {{ groups['db'] | join(', ') }}
-          - You can now re-run site.yaml to redeploy fresh.
+          ✅ Safe teardown completed!
+          - Removed /var/www/html/water directory from web server
+          - Stopped and disabled Apache2 on web server
+          - Stopped and disabled MySQL on database server
+          - Did NOT remove any packages or the MySQL database data
+          - You can now safely re-run site.yaml to redeploy
