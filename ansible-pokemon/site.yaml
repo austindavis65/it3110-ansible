@@ -1,0 +1,16 @@
+---
+- name: Deploy MySQL Role
+  hosts: db
+  become: yes
+  roles:
+    - role: mysql
+
+- name: Deploy Apache + PHP + Pokemon App Role
+  hosts: web
+  become: yes
+  roles:
+    - role: apache_php
+      db_host: "{{ hostvars['mysql']['ansible_host'] }}"   # or hardcode IP
+      db_user: sally
+      db_pass: foo123
+      db_name: pokemondb

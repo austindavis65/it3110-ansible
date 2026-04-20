@@ -1,0 +1,74 @@
+---
+- name: Teardown Pokemon Application
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  tasks:
+
+    - name: Remove Pokemon web application files
+      file:
+        path: /var/www/html/water
+        state: absent
+      when: inventory_hostname in groups['web']
+
+    - name: Remove Apache2 and PHP packages
+      apt:
+        name:
+          - apache2
+          - php
+          - php-mysql
+          - libapache2-mod-php
+        state: absent
+        purge: yes
+        autoremove: yes
+      when: inventory_hostname in groups['web']
+
+    - name: Stop and disable Apache2
+      service:
+        name: apache2
+        state: stopped
+        enabled: no
+      when: inventory_hostname in groups['web']
+      ignore_errors: yes
+
+    - name: Remove MySQL server and related packages
+      apt:
+        name:
+          - mysql-server
+          - python3-pymysql
+          - python3-mysqldb
+        state: absent
+        purge: yes
+        autoremove: yes
+      when: inventory_hostname in groups['db']
+
+    - name: Stop and disable MySQL
+      service:
+        name: mysql
+        state: stopped
+        enabled: no
+      when: inventory_hostname in groups['db']
+      ignore_errors: yes
+
+    - name: Remove MySQL data directory (completely reset database)
+      file:
+        path: /var/lib/mysql
+        state: absent
+      when: inventory_hostname in groups['db']
+      ignore_errors: yes
+
+    - name: Remove custom MySQL config
+      file:
+        path: /etc/mysql/mysql.conf.d/mysqld.cnf
+        state: absent
+      when: inventory_hostname in groups['db']
+      ignore_errors: yes
+
+    - name: Final message
+      debug:
+        msg: |
+          ✅ Teardown completed!
+          - Web files and Apache removed from {{ groups['web'] | join(', ') }}
+          - MySQL server and database completely removed from {{ groups['db'] | join(', ') }}
+          - You can now re-run site.yaml to redeploy fresh.
