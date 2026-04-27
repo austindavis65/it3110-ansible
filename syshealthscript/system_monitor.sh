@@ -50,7 +50,7 @@ fi
 # SERVICE CHECK
 # ============================
 
-SERVICE="isc-dhcp-server"
+SERVICE="apache2"
 
 if systemctl is-active --quiet "$SERVICE"; then
   SERVICE_STATUS="running"
