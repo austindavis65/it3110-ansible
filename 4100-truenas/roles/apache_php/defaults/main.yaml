@@ -1,0 +1,8 @@
+apache_packages:
+  - apache2
+  - php
+  - php-mysql
+  - libapache2-mod-php
+
+app_dir: /var/www/html/water
+tgz_file: WaterPokemon-f22.tgz

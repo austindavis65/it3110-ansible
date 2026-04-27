@@ -1,0 +1,45 @@
+---
+- name: Install Apache2 and PHP packages
+  apt:
+    name: "{{ apache_packages }}"
+    state: present
+    update_cache: yes
+
+- name: Ensure Apache is started and enabled
+  service:
+    name: apache2
+    state: started
+    enabled: yes
+
+- name: Copy Pokemon application tarball
+  copy:
+    src: "{{ tgz_file }}"
+    dest: /tmp/
+
+- name: Extract Pokemon app to /var/www/html
+  unarchive:
+    src: /tmp/{{ tgz_file }}
+    dest: /var/www/html
+    remote_src: yes
+    creates: "{{ app_dir }}/index.php"   # adjust if needed
+
+- name: Template config.php with database variables
+  template:
+    src: config.php.j2
+    dest: "{{ app_dir }}/config.php"
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Set proper permissions on app directory
+  file:
+    path: /var/www/html
+    owner: www-data
+    group: www-data
+    recurse: yes
+    state: directory
+
+- name: Restart Apache after config changes
+  service:
+    name: apache2
+    state: restarted

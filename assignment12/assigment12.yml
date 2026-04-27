@@ -1,0 +1,138 @@
+---
+- name: Secure disk partitioning and filesystem configuration
+  hosts: [aws_server]
+  become: true
+  collections:
+    - community.general
+    - ansible.posix
+
+  vars:
+    target_disk: /dev/nvme1n1
+    part_sep: "p"
+
+    partitions:
+      - number: 1
+        label: audit
+        mount_point: /var/log/audit
+        size_start: 1MiB
+        size_end: 1025MiB
+        fs_type: ext4
+        fs_opts: "-b 4096 -i 16384 -m 1"
+        mount_opts: "defaults"
+
+      - number: 2
+        label: sysadmin
+        mount_point: /sysadmin
+        size_start: 1025MiB
+        size_end: 1225MiB
+        fs_type: ext4
+        fs_opts: "-b 4096 -i 16384 -m 1"
+        mount_opts: "defaults"
+
+      - number: 3
+        label: executives
+        mount_point: /executives
+        size_start: 1225MiB
+        size_end: 1725MiB
+        fs_type: ext4
+        fs_opts: "-b 4096 -i 16384 -m 1"
+        mount_opts: "defaults"
+
+      - number: 4
+        label: analysts
+        mount_point: /analysts
+        size_start: 1725MiB
+        size_end: 1925MiB
+        fs_type: ext4
+        fs_opts: "-b 4096 -i 16384 -m 1"
+        mount_opts: "defaults,noexec,nosuid,nodev"
+
+  tasks:
+    - name: Verify target disk exists
+      stat:
+        path: "{{ target_disk }}"
+      register: disk_stat
+
+    - name: Fail if target disk does not exist
+      fail:
+        msg: "Target disk {{ target_disk }} does not exist. Check your Terraform-attached EBS volume."
+      when: not disk_stat.stat.exists
+
+    - name: Gather target disk size in bytes
+      command: "lsblk -bndo SIZE {{ target_disk }}"
+      register: disk_size
+      changed_when: false
+
+    - name: Fail if target disk is smaller than 2 GiB
+      fail:
+        msg: "Disk {{ target_disk }} is too small for the required partitions."
+      when: (disk_size.stdout | int) < 2147483648
+
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - parted
+          - e2fsprogs
+        state: present
+        update_cache: true
+
+    - name: Create GPT partition table
+      community.general.parted:
+        device: "{{ target_disk }}"
+        number: 1
+        label: gpt
+        state: present
+
+    - name: Create required partitions
+      community.general.parted:
+        device: "{{ target_disk }}"
+        number: "{{ item.number }}"
+        state: present
+        part_start: "{{ item.size_start }}"
+        part_end: "{{ item.size_end }}"
+        fs_type: "{{ item.fs_type }}"
+      loop: "{{ partitions }}"
+
+    - name: Create filesystem on each partition
+      community.general.filesystem:
+        fstype: "{{ item.fs_type }}"
+        dev: "{{ target_disk }}{{ part_sep }}{{ item.number }}"
+        opts: "{{ item.fs_opts }}"
+        force: no
+      loop: "{{ partitions }}"
+
+    - name: Ensure mount point directories exist
+      file:
+        path: "{{ item.mount_point }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ partitions }}"
+
+    - name: Mount partitions and persist in fstab
+      ansible.posix.mount:
+        path: "{{ item.mount_point }}"
+        src: "{{ target_disk }}{{ part_sep }}{{ item.number }}"
+        fstype: "{{ item.fs_type }}"
+        opts: "{{ item.mount_opts }}"
+        state: mounted
+      loop: "{{ partitions }}"
+
+    - name: Verify mounted filesystems
+      command: mount
+      register: mount_output
+      changed_when: false
+
+    - name: Show mounted filesystems
+      debug:
+        var: mount_output.stdout_lines
+
+    - name: Show disk usage
+      command: df -hT
+      register: df_output
+      changed_when: false
+
+    - name: Display disk usage
+      debug:
+        var: df_output.stdout_lines

@@ -1,0 +1,50 @@
+---
+- name: Safe Teardown - Pokemon Application (Files + Services Only)
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  tasks:
+
+    - name: Remove Pokemon web application directory
+      file:
+        path: /var/www/html/water
+        state: absent
+      when: "'web' in group_names"
+      tags: web
+
+    - name: Stop and disable Apache2 service
+      service:
+        name: apache2
+        state: stopped
+        enabled: no
+      when: "'web' in group_names"
+      ignore_errors: yes
+      tags: web
+
+    - name: Stop and disable MySQL service
+      service:
+        name: mysql
+        state: stopped
+        enabled: no
+      when: "'db' in group_names"
+      ignore_errors: yes
+      tags: db
+
+    - name: Remove custom MySQL configuration (optional)
+      file:
+        path: /etc/mysql/mysql.conf.d/mysqld.cnf
+        state: absent
+      when: "'db' in group_names"
+      ignore_errors: yes
+      tags: db
+
+    - name: Teardown complete message
+      debug:
+        msg: |
+          ✅ Safe teardown completed!
+          - Removed /var/www/html/water directory from web server
+          - Stopped and disabled Apache2 on web server
+          - Stopped and disabled MySQL on database server
+          - Did NOT remove any packages or the MySQL database data
+          - You can now safely re-run site.yaml to redeploy

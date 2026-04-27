@@ -1,0 +1,39 @@
+---
+- name: Install MySQL server and required Python libraries
+  apt:
+    name:
+      - mysql-server
+      - python3-pymysql
+      - python3-mysqldb
+    state: present
+    update_cache: yes
+
+- name: Ensure MySQL service is started and enabled
+  service:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: Template MySQL config to allow remote connections
+  template:
+    src: mysqld.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart mysql
+
+- name: Create pokemondb database
+  mysql_db:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    name: "{{ db_name | default('pokemondb') }}"
+    state: present
+
+- name: Create application user 'sally' with remote access
+  mysql_user:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    name: "{{ db_user | default('sally') }}"
+    password: "{{ db_pass | default('foo123') }}"
+    host: '%'
+    priv: "{{ db_name | default('pokemondb') }}.*:ALL"
+    state: present
