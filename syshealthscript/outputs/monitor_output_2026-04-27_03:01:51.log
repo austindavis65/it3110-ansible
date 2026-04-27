@@ -1,0 +1,8 @@
+Host: dhcp-server
+Timestamp: 2026-04-27 03:01:50
+
+CPU: 9% (OK)
+Memory: 21% (OK)
+Disk: 74% (OK)
+
+Service: isc-dhcp-server (running)

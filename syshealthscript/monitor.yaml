@@ -1,0 +1,42 @@
+---
+- name: Run system monitor remotely and collect output
+  hosts: servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    remote_script_path: /tmp/system_monitor.sh
+
+  tasks:
+
+    - name: Copy system monitor script to remote machine
+      copy:
+        src: ./system_monitor.sh
+        dest: "{{ remote_script_path }}"
+        mode: '0755'
+
+    - name: Execute system monitor script
+      command: /bin/bash {{ remote_script_path }}
+      register: monitor_output
+      changed_when: false
+
+
+    - name: Generate local timestamp for filename
+      delegate_to: localhost
+      become: false
+      run_once: true
+      set_fact:
+        local_timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H:%M:%S') }}"
+
+
+    - name: Save system monitor output locally
+      delegate_to: localhost
+      become: false
+      copy:
+        content: "{{ monitor_output.stdout }}"
+        dest: "./outputs/monitor_output_{{ local_timestamp }}.log"
+
+    - name: Display errors (if any)
+      debug:
+        msg: "{{ monitor_output.stderr }}"
+      when: monitor_output.stderr is defined and monitor_output.stderr != ""

@@ -1,80 +1,75 @@
 #!/bin/bash
 
-# basic config 
-
-LOG_FILE="/var/log/system_monitor.log"
-ALERT_EMAIL="austin.davis@utahtech.edu"
+# ============================
+# CONFIG
+# ============================
 
 CPU_THRESHOLD=80
 MEM_THRESHOLD=80
 DISK_THRESHOLD=90
 HOST=$(hostname)
-
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 
-# basic functions
+# ============================
+# CPU USAGE
+# ============================
 
-log_message() {
-    echo "[$DATE] $1" >> $LOG_FILE
-}
+CPU_IDLE=$(top -bn1 | awk '/Cpu\(s\)/ {print $8}' | cut -d. -f1)
+CPU_USAGE=$((100 - CPU_IDLE))
 
-send_alert() {
-    echo "$1" | mail -s "System Alert" $ALERT_EMAIL
-}
+[ "$CPU_USAGE" -lt 0 ] && CPU_USAGE=0
 
-#system log start message
-
-log_message "System Monitor Test Start on $HOST"
-
-# cpu check
-
-CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print 100 - $8}' | cut -d "." -f1)
-
-log_message "CPU Usage: $CPU_USAGE%"
-
+CPU_STATUS="OK"
 if [ "$CPU_USAGE" -gt "$CPU_THRESHOLD" ]; then
-    ALERT="WARNING: CPU usage is high at $CPU_USAGE%"
-    log_message "$ALERT"
-    send_alert "$ALERT"
+  CPU_STATUS="WARNING"
 fi
 
-# memory check
+# ============================
+# MEMORY USAGE
+# ============================
 
-MEM_USAGE=$(free | grep Mem | awk '{print $3/$2 * 100.0}' | cut -d "." -f1)
+MEM_USAGE=$(free | awk '/Mem:/ {printf("%.0f", $3/$2 * 100)}')
 
-log_message "Memory Usage: $MEM_USAGE%"
-
+MEM_STATUS="OK"
 if [ "$MEM_USAGE" -gt "$MEM_THRESHOLD" ]; then
-    ALERT="WARNING: Memory usage is high at $MEM_USAGE%"
-    log_message "$ALERT"
-    send_alert "$ALERT"
+  MEM_STATUS="WARNING"
 fi
 
-# disk usage check 
+# ============================
+# DISK USAGE
+# ============================
 
-DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+DISK_USAGE=$(df / | awk 'END {gsub("%","",$5); print $5}')
 
-log_message "Disk Usage: $DISK_USAGE%"
-
+DISK_STATUS="OK"
 if [ "$DISK_USAGE" -gt "$DISK_THRESHOLD" ]; then
-    ALERT="WARNING: Disk usage is high at $DISK_USAGE%"
-    log_message "$ALERT"
-    send_alert "$ALERT"
+  DISK_STATUS="WARNING"
 fi
 
-# check of a vital service 
+# ============================
+# SERVICE CHECK
+# ============================
 
 SERVICE="isc-dhcp-server"
 
-if systemctl is-active --quiet $SERVICE; then
-    log_message "Service $SERVICE is running"
+if systemctl is-active --quiet "$SERVICE"; then
+  SERVICE_STATUS="running"
 else
-    ALERT="CRITICAL: Service $SERVICE is NOT running"
-    log_message "$ALERT"
-    send_alert "$ALERT"
+  SERVICE_STATUS="stopped"
 fi
 
-# log message end of check 
+# ============================
+# OUTPUT (ANSIBLE CONSUMPTION)
+# ============================
 
-log_message "System check complete"
-echo "Check completed at $DATE"
+cat <<EOF 
+Host: $HOST
+Timestamp: $DATE
+
+CPU: $CPU_USAGE% ($CPU_STATUS)
+Memory: $MEM_USAGE% ($MEM_STATUS)
+Disk: $DISK_USAGE% ($DISK_STATUS)
+
+Service: $SERVICE ($SERVICE_STATUS)
+
+EOF
